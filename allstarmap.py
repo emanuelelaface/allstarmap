@@ -39,7 +39,6 @@ def asterisk_command(cmd):
 # ----------------------------------------------------------------------------
 def get_local_connections():
     conns = []
-   
     raw = asterisk_command(f"rpt xnode {home_id}")
     if raw == -1:
         return conns
@@ -80,7 +79,8 @@ def get_local_connections():
                     node_desc = 'Echolink - '+node_echo.split()[1]+' - '+node_echo.split()[3]
                     node_ip = node_echo.split()[2]
         node_id = int(node_id)
-
+        if node_mode == '' and node_stat == '':
+            node_mode = 'Local Link'
         conns.append(
             dict(node=node_id, direction=node_dir, uptime=node_uptime, ip=node_ip, desc=node_desc, mode=node_mode, status=node_stat)
         )
@@ -298,9 +298,10 @@ def build_home_view():
     Input("home",                "n_clicks"),
     Input({"type": "disconnect", "index": ALL}, "n_clicks"),
     Input({"type": "monitor",    "index": ALL}, "n_clicks"),
+    Input({"type": "localmonitor",    "index": ALL}, "n_clicks"),
     Input({"type": "connect",    "index": ALL}, "n_clicks"),
 )
-def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks, connect_clicks):
+def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks, localmonitor_clicks, connect_clicks):
     ctx = dash.callback_context
     if not ctx.triggered:
         return [], ""
@@ -319,6 +320,10 @@ def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks
 
     if typ == "monitor":
         asterisk_command(f"rpt cmd {home_id} ilink 2 {idx}")
+        return build_home_view()
+    
+    if typ == "localmonitor":
+        asterisk_command(f"rpt cmd {home_id} ilink 8 {idx}")
         return build_home_view()
 
     if typ == "connect":
@@ -361,6 +366,20 @@ def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks
                         "marginRight": "10px",
                         "padding": "8px 16px",
                         "backgroundColor": "#007bff",
+                        "color": "white",
+                        "border": "none",
+                        "borderRadius": "4px",
+                        "cursor": "pointer"
+                    },
+                ),
+                html.Button(
+                    "Local Monitor",
+                    id={"type": "localmonitor", "index": node_id},
+                    n_clicks=0,
+                    style={
+                        "marginRight": "10px",
+                        "padding": "8px 16px",
+                        "backgroundColor": "#e100ff",
                         "color": "white",
                         "border": "none",
                         "borderRadius": "4px",
