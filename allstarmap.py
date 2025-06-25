@@ -80,7 +80,7 @@ def get_local_connections():
                     node_ip = node_echo.split()[2]
         node_id = int(node_id)
         if node_mode == '' and node_stat == '':
-            node_mode = 'Local Link'
+            node_mode = 'Local Monitor'
         conns.append(
             dict(node=node_id, direction=node_dir, uptime=node_uptime, ip=node_ip, desc=node_desc, mode=node_mode, status=node_stat)
         )
