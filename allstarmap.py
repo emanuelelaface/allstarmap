@@ -9,6 +9,7 @@ import time
 # password = <YOUR PASSOWRD OF ASTERISK>
 # node = <YOUR NODE NUMBER>
 # ----------------------------------------------------------------------------
+
 asterisk_conf = {}
 with open("allstarmap.conf") as f:
     for line in f:
@@ -80,7 +81,7 @@ def get_local_connections():
                     node_ip = node_echo.split()[2]
         node_id = int(node_id)
         if node_mode == '' and node_stat == '':
-            node_mode = 'Local Monitor'
+            node_mode = 'Muted'
         conns.append(
             dict(node=node_id, direction=node_dir, uptime=node_uptime, ip=node_ip, desc=node_desc, mode=node_mode, status=node_stat)
         )
@@ -231,7 +232,11 @@ app.layout = html.Div(
             zoom=2,
             style={"height": "80vh", "width": "100%"},
         ),
-        html.Div(id="panel"),  # ← pannello connessioni
+        dcc.Loading(
+            id="loading-spinner",
+            type="circle",   # opzioni: "default", "circle", "dot", "cube", ...
+            children=html.Div(id="panel")
+        ),
         html.Div(id="disconnect-output", style={"display": "none"}),
     ]
 )
@@ -241,7 +246,7 @@ app.layout = html.Div(
 # ----------------------------------------------------------------------------
 
 def build_home_view():
-    time.sleep(1)
+    time.sleep(1.5)
     conns = get_local_connections()
     if not conns:
         return [], html.Div("No connections.", style={"padding": "10px"})
@@ -298,10 +303,10 @@ def build_home_view():
     Input("home",                "n_clicks"),
     Input({"type": "disconnect", "index": ALL}, "n_clicks"),
     Input({"type": "monitor",    "index": ALL}, "n_clicks"),
-    Input({"type": "localmonitor",    "index": ALL}, "n_clicks"),
     Input({"type": "connect",    "index": ALL}, "n_clicks"),
 )
-def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks, localmonitor_clicks, connect_clicks):
+def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks, connect_clicks):
+    global click_state
     ctx = dash.callback_context
     if not ctx.triggered:
         return [], ""
@@ -313,7 +318,7 @@ def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks
     except (json.JSONDecodeError, TypeError):
         typ = raw_id
         idx = None
-
+    
     if typ == "disconnect":
         asterisk_command(f"rpt cmd {home_id} ilink 1 {idx}")
         return build_home_view()
@@ -322,10 +327,6 @@ def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks
         asterisk_command(f"rpt cmd {home_id} ilink 2 {idx}")
         return build_home_view()
     
-    if typ == "localmonitor":
-        asterisk_command(f"rpt cmd {home_id} ilink 8 {idx}")
-        return build_home_view()
-
     if typ == "connect":
         asterisk_command(f"rpt cmd {home_id} ilink 3 {idx}")
         return build_home_view()
@@ -366,20 +367,6 @@ def handle_all_clicks(node_clicks, home_click, disconnect_clicks, monitor_clicks
                         "marginRight": "10px",
                         "padding": "8px 16px",
                         "backgroundColor": "#007bff",
-                        "color": "white",
-                        "border": "none",
-                        "borderRadius": "4px",
-                        "cursor": "pointer"
-                    },
-                ),
-                html.Button(
-                    "Local Monitor",
-                    id={"type": "localmonitor", "index": node_id},
-                    n_clicks=0,
-                    style={
-                        "marginRight": "10px",
-                        "padding": "8px 16px",
-                        "backgroundColor": "#e100ff",
                         "color": "white",
                         "border": "none",
                         "borderRadius": "4px",
