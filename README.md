@@ -3,6 +3,10 @@
 An interactive web client built with MapLibre GL JS, deck.gl and a FastAPI backend.  
 Displays AllStarLink nodes, shows detailed info on hover/click, and lets you perform actions like Monitor, Connect, Muted and Disconnect.
 
+
+![Screenshot](images/screenshot.png)
+
+
 ## Features
 
 - **User authentication** via FastAPI `/auth/token`
@@ -22,7 +26,7 @@ Displays AllStarLink nodes, shows detailed info on hover/click, and lets you per
 
 1. **Clone the repo**  
    ```bash
-   git clone https://github.com/yourusername/allstarmap.git
+   git clone https://github.com/emanuelelaface/allstarmap.git
    cd allstarmap
    ```
 
@@ -33,7 +37,7 @@ Displays AllStarLink nodes, shows detailed info on hover/click, and lets you per
 
 ## Configuration
 
-Open `static/index.html` (or `templates/index.html` if using templating) and set the API base URL:
+Open `map/index.html` and set the API base URL:
 
 ```js
 const API_BASE = 'http://<YOUR_FASTAPI_HOST>:8501';
@@ -46,15 +50,16 @@ Replace `<YOUR_FASTAPI_HOST>` with the hostname or IP where your FastAPI server 
 Start the FastAPI server (serves both API and frontend):
 
 ```bash
-uvicorn allstarapi:app --host 0.0.0.0 --port 8501
+python allstarapi.py
 ```
 
 Then browse to:
 
 ```
-http://localhost:8501/
+http://<YOUR_FASTAPI_HOST>:8501/map
+```
+to use the default map gui, if you want to build your own interface you can exploit the FastAPI that is fully documented at the link:
+```
+http://<YOUR_FASTAPI_HOST>:8501/docs
 ```
 
-## Screenshot
-
-![Screenshot](images/screenshot.png)
