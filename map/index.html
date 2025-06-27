@@ -64,14 +64,12 @@
   <script>
     const API_BASE = 'http://<ALLSTARAPI ADDRESS>:8501';
     let authToken = '', panelLocked = false, clickedOnNode = false;
-    let refreshInterval = null;                // --- timer polling home node
+    let refreshInterval = null; 
 
-    // funzione per fermare il polling ovunque serva
     const stopRefresh = () => {
       if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
     };
 
-    // DOM refs
     const loginOverlay = document.getElementById('loginOverlay'),
           loginForm    = document.getElementById('loginForm'),
           loginError   = document.getElementById('loginError'),
@@ -166,7 +164,7 @@
           }
         },
         onClick:info=>{
-          stopRefresh();              // <<< ferma polling se clicchi un nodo qualsiasi
+          stopRefresh(); 
           if(!info.object)return;
           panelLocked=true; clickedOnNode=true; homeConnectionsLayer=null;
           connectionsPanel.style.display='none';
@@ -214,7 +212,7 @@
               .map(([k,v])=>`<div><b>${k}:</b> ${v}</div>`).join('');
           }
         }
-        // (EchoLink nodes non cliccabili, quindi nessun onClick)
+        
       });
 
       /* ---- overlay & click-reset ---- */
@@ -222,7 +220,7 @@
       map.addControl(overlay);
       map.on('click',()=>setTimeout(()=>{
         if(!clickedOnNode){
-          stopRefresh();             // <<< clic in mappa “vuota” ferma polling
+          stopRefresh(); 
           panelLocked=false; infoPanel.style.display='none'; connectionsPanel.style.display='none';
           overlay.setProps({layers:[scatter,echoScatter]});
         }
@@ -239,7 +237,7 @@
 
       let homeMarker=null;
       homeSelect.onchange=e=>{
-        stopRefresh();               // <<< cambio home = stop polling corrente
+        stopRefresh(); 
         if (!clickedOnNode) {
           panelLocked = false;
           infoPanel.style.display = 'none';
@@ -266,12 +264,10 @@
           homeMarker.getElement().onclick = ()=>{
             nodeConnectionsLayer = null;
 	    clickedOnNode = true; 
-            stopRefresh();                       // prima azzera, poi ri-avvia
-            loadHomeConnections();               // fetch immediato
+            stopRefresh();
+            loadHomeConnections();
             refreshInterval = setInterval(loadHomeConnections, 1000);
           };
-
-        //  loadHomeConnections();   // prima visualizzazione (una tantum)
         })
         .catch(alert);
       };
