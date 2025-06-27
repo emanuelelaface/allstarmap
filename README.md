@@ -45,6 +45,13 @@ const API_BASE = 'http://<YOUR_FASTAPI_HOST>:8501';
 
 Replace `<YOUR_FASTAPI_HOST>` with the hostname or IP where your FastAPI server runs.
 
+**Note:** If you install this application on an AllStarLink node created using the official appliance image from the AllStarLink repository (`https://allstarlink.github.io/install/pi-appliance/pi-detailed/`), you must open port 8501 on the firewall:Add commentMore actions
+>
+> ```bash
+> sudo firewall-cmd --zone=allstarlink --add-port=8501/tcp --permanent
+> sudo firewall-cmd --reload
+> ```
+
 ## Running
 
 Start the FastAPI server (serves both API and frontend):
