@@ -13,6 +13,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from pydantic import BaseModel, Field
 from asterisk.ami import AMIClient, SimpleAction
+import io, zipfile, xml.etree.ElementTree as ET
+import pandas as pd
 import re
 
 # --------------------------- Config ------------------------------------
@@ -226,8 +228,7 @@ async def set_home(body: HomeNodeBody, _: User = Depends(current_user)):
     HOME_NODE = body.node
     return {"home_node": HOME_NODE}
 
-# ------------------------ Nodes info ----------------------------------------
-import pandas as pd
+# ------------- Allstarlink Nodes info ---------------------------------------
 @functools.lru_cache
 def _nodes_df():
     nl = requests.post("https://stats.allstarlink.org/api/stats/nodeList", headers={"Accept":"application/json","Content-Type":"application/x-www-form-urlencoded","X-Requested-With":"XMLHttpRequest"}, timeout=30).json()["data"]
@@ -243,6 +244,66 @@ def _nodes_df():
     mp_df["Lon"] = pd.to_numeric(mp_df["Lon"], errors="coerce")
     mp_df = mp_df[mp_df["Lat"].between(-90,90) & mp_df["Lon"].between(-180,180)]
     return df.merge(mp_df[["Node","Lat","Lon"]], on="Node").drop_duplicates("Node")
+
+# --------------- Echolink Nodes info ---------------------------------------
+@functools.lru_cache               # mirrors the behaviour of _nodes_df()
+def _echolink_df() -> pd.DataFrame:
+    url = "http://www.echolink.org/node_location.kmz"
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf, zf.open("doc.kml") as f:
+        tree = ET.parse(f)
+
+    root = tree.getroot()
+    ns = {"kml": "http://earth.google.com/kml/2.0"}
+    pattern = re.compile(r'^(.*?)\s*\(([^)]+)\)\s+(\d+)$')
+
+    records = []
+    for pm in root.findall(".//kml:Placemark", ns):
+        name_el = pm.find("kml:name", ns)
+        desc_el = pm.find("kml:description", ns)
+        coords_el = pm.find(".//kml:coordinates", ns)
+        if coords_el is None or not coords_el.text:
+            continue
+
+        desc_text = (desc_el.text or "").strip()
+        m = pattern.match(desc_text)
+        if m:
+            desc_base, freq_str, node_str = m.groups()
+            try:
+                freq = float(freq_str)
+            except ValueError:
+                freq = None
+            try:
+                node = int(node_str)
+            except ValueError:
+                node = None
+        else:
+            desc_base, freq, node = desc_text, None, None
+
+        lon, lat, *_ = coords_el.text.strip().split(",")
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except ValueError:
+            continue
+
+        records.append({
+            "Node":      node,
+            "Call Sign": name_el.text.strip() if name_el is not None else None,
+            "Desc":      desc_base,
+            "Freq":      freq,
+            "Lat":       lat,
+            "Lon":       lon,
+        })
+
+    return pd.DataFrame(records).dropna(subset=["Lat", "Lon"])
+
+
+@app.get("/echolinknodes", tags=["nodes"], summary="EchoLink nodes")
+async def echolinknodes():
+    return _echolink_df().to_dict(orient="records")
 
 @app.get("/nodes", tags=["nodes"])
 async def nodes():
