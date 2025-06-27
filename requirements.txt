@@ -1,2 +1,6 @@
 fastapi[all]>=0.95.0
 uvicorn[standard]>=0.20.0
+requests
+pandas
+asterisk-ami
+python-jose
