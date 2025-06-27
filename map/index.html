@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AllStarLink Interactive Map</title>
+  <!-- MapLibre CSS -->
+  <link href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet"/>
+  <style>
+    html, body, #map, #spinner, #loginOverlay {
+      margin:0; padding:0; width:100%; height:100%;
+    }
+    #map, #spinner { display:none; }
+    #spinner {
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      background:rgba(255,255,255,0.9);
+      padding:1rem 2rem; font-size:1.2rem;
+      border-radius:8px; z-index:1;
+      display:flex; align-items:center; justify-content:center;
+    }
+    #infoPanel {
+      position:absolute; top:1rem; right:1rem;
+      background:rgba(0,0,0,0.7); color:#fff;
+      padding:0.5rem 1rem; border-radius:4px;
+      font-size:0.9rem; pointer-events:auto;
+      display:none; z-index:2; max-width:240px;
+    }
+    #infoPanel b { display:inline-block; width:90px; }
+    #infoPanel button {
+      margin-top:0.5rem; width:100%; padding:0.4rem;
+      border:none; border-radius:4px; font-size:0.9rem;
+      cursor:pointer;
+    }
+    #connectionsPanel {
+      position:absolute; bottom:0; left:0; right:0;
+      max-height:30%; background:#fff;
+      overflow-y:auto; padding:0.5rem;
+      box-shadow:0 -2px 5px rgba(0,0,0,0.3);
+      display:none; z-index:2; font-size:0.9rem;
+    }
+    #connectionsPanel h3 {
+      margin:0 0 0.5rem; font-size:1rem;
+      border-bottom:1px solid #ddd; padding-bottom:0.3rem;
+    }
+    .conn-entry {
+      margin-bottom:0.5rem; padding-bottom:0.3rem;
+      border-bottom:1px solid #eee; cursor:pointer;
+    }
+    .conn-entry:hover { background:rgba(0,120,250,0.1); }
+    #loginOverlay {
+      position:absolute; top:0; left:0;
+      background:rgba(0,0,0,0.7); display:flex;
+      align-items:center; justify-content:center; z-index:3;
+    }
+    #loginForm {
+      background:#fff; padding:2rem;
+      border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.5);
+      width:300px;
+    }
+    #loginForm h2 { margin-top:0; }
+    #loginForm label { display:block; margin-top:1rem; }
+    #loginForm input {
+      width:100%; padding:0.5rem; margin-top:0.25rem;
+      box-sizing:border-box;
+    }
+    #loginForm button {
+      margin-top:1.5rem; width:100%; padding:0.5rem;
+      background:#007bff; color:#fff; border:none;
+      border-radius:4px; cursor:pointer;
+    }
+    #loginError { color:red; margin-top:0.5rem; font-size:0.9rem; }
+    #homeNodeSelect {
+      position:absolute; top:1rem; left:1rem;
+      z-index:2; padding:0.5rem; background:#fff;
+      border-radius:4px; font-size:0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Login overlay -->
+  <div id="loginOverlay">
+    <form id="loginForm">
+      <h2>Login</h2>
+      <label>Username<br><input type="text" id="username" required></label>
+      <label>Password<br><input type="password" id="password" required></label>
+      <button type="submit">Sign In</button>
+      <div id="loginError"></div>
+    </form>
+  </div>
+
+  <div id="spinner">⏳ Loading map and nodes…</div>
+  <div id="map"></div>
+  <div id="infoPanel"></div>
+  <select id="homeNodeSelect" style="display:none">
+    <option value="">Home Node…</option>
+  </select>
+  <div id="connectionsPanel"></div>
+
+  <!-- MapLibre & deck.gl -->
+  <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@deck.gl/core@8.9.0/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/layers@8.9.0/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/mapbox@8.9.0/dist.min.js"></script>
+
+  <script>
+    const API_BASE = 'http://<ADDRESS OF FASTAPI>:8501';
+    let authToken = '';
+    let panelLocked = false;
+    let clickedOnNode = false;
+
+    const loginOverlay     = document.getElementById('loginOverlay');
+    const loginForm        = document.getElementById('loginForm');
+    const loginError       = document.getElementById('loginError');
+    const spinner          = document.getElementById('spinner');
+    const mapDiv           = document.getElementById('map');
+    const infoPanel        = document.getElementById('infoPanel');
+    const homeSelect       = document.getElementById('homeNodeSelect');
+    const connectionsPanel = document.getElementById('connectionsPanel');
+
+    // 1) Login
+    loginForm.addEventListener('submit', e => {
+      e.preventDefault();
+      loginError.textContent = '';
+      const u = document.getElementById('username').value;
+      const p = document.getElementById('password').value;
+      const params = new URLSearchParams({ username: u, password: p });
+      fetch(`${API_BASE}/auth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+      })
+      .then(r => r.ok ? r.json() : Promise.reject('Invalid credentials'))
+      .then(j => {
+        authToken = j.access_token;
+        loginOverlay.style.display = 'none';
+        mapDiv.style.display       = 'block';
+        spinner.style.display      = 'flex';
+        initMap();
+      })
+      .catch(err => loginError.textContent = err);
+    });
+
+    // 2) Init map + load nodes
+    function initMap() {
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://demotiles.maplibre.org/style.json',
+        center: [0, 0],
+        zoom: 1.5
+      });
+      map.on('load', () => {
+        spinner.innerText = '⏳ Loading nodes…';
+        fetch(`${API_BASE}/nodes`, {
+          headers: { 'Authorization': 'Bearer ' + authToken }
+        })
+        .then(r => r.json())
+        .then(nodes => {
+          spinner.style.display = 'none';
+          setupLayers(map, nodes);
+        });
+      });
+    }
+
+    // 3) Setup layers & interactions
+    function setupLayers(map, nodes) {
+      const nodeById = new Map(nodes.map(d => [String(d.Node), d]));
+      const maxConn  = Math.max(...nodes.map(d => +d.Connections || 0), 1);
+
+      function getColor(d) {
+        const t = Math.min((+d.Connections || 0) / maxConn, 1);
+        if (t < 0.5) {
+          const r = t / 0.5;
+          return [0, Math.round(255 * r), Math.round(255 * (1 - r))];
+        }
+        const r = (t - 0.5) / 0.5;
+        return [Math.round(255 * r), Math.round(255 * (1 - r)), 0];
+      }
+      function getRadius(d) {
+        return Math.sqrt(+d.Connections + 1) * 6000;
+      }
+
+      let homeConnectionsLayer = null;
+      let nodeConnectionsLayer = null;
+      let homeCoords = null;
+      let homeConnectedIds = [];
+
+      function performAction(nodeId, action) {
+        return fetch(`${API_BASE}/asterisk/link/${nodeId}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + authToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ action })
+        })
+        .then(r => {
+          if (!r.ok) throw new Error(`${action} failed`);
+          alert(`"${action}" executed`);
+        })
+        .catch(e => alert(e));
+      }
+      window.performAction = performAction;
+
+      const scatter = new deck.ScatterplotLayer({
+        id: 'nodes',
+        data: nodes,
+        pickable: true,
+        getPosition: d => [d.Lon, d.Lat],
+        getFillColor: d => [...getColor(d), 200],
+        getRadius: getRadius,
+
+        onHover: info => {
+          if (panelLocked) return;
+          if (info.object) {
+            infoPanel.innerHTML = Object.entries(info.object)
+              .filter(([k]) => k !== 'Lat' && k !== 'Lon')
+              .map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('');
+            infoPanel.style.display = 'block';
+          } else {
+            infoPanel.style.display = 'none';
+          }
+        },
+
+        onClick: info => {
+          if (!info.object) return;
+          panelLocked = true;
+          clickedOnNode = true;
+          homeConnectionsLayer = null;
+          connectionsPanel.style.display = 'none';
+
+          const node = info.object, nodeId = node.Node;
+          infoPanel.innerHTML = Object.entries(node)
+            .filter(([k]) => k !== 'Lat' && k !== 'Lon')
+            .map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('')
+            + ['monitor','connect','muted'].map(act =>
+                `<button onclick="performAction(${nodeId},'${act}')">
+                  ${act.charAt(0).toUpperCase() + act.slice(1)}
+                </button>`
+              ).join('');
+          infoPanel.style.display = 'block';
+
+          spinner.style.display = 'flex';
+          spinner.innerText = '⏳ Loading links…';
+          fetch(`${API_BASE}/nodes/${nodeId}/links`, {
+            headers: { 'Authorization': 'Bearer ' + authToken }
+          })
+          .then(r => r.json())
+          .then(json => {
+            spinner.style.display = 'none';
+            const lines = json.links
+              .map(id => nodeById.get(String(id)))
+              .filter(t => t)
+              .map(t => ({ source: [node.Lon, node.Lat], target: [t.Lon, t.Lat] }));
+            nodeConnectionsLayer = new deck.LineLayer({
+              id: 'node-connections',
+              data: lines,
+              getSourcePosition: d => d.source,
+              getTargetPosition: d => d.target,
+              getColor: [255, 100, 0],
+              getWidth: 2
+            });
+            overlay.setProps({ layers: [scatter, nodeConnectionsLayer] });
+          })
+          .catch(err => {
+            console.error(err);
+            spinner.innerText = '❌ Error loading links';
+            setTimeout(() => spinner.style.display = 'none', 2000);
+          });
+        }
+      });
+
+      // overlay + reset on outside click
+      window.overlay = new deck.MapboxOverlay({ interleaved: true, layers: [scatter] });
+      map.addControl(overlay);
+      map.on('click', () => {
+        setTimeout(() => {
+          if (!clickedOnNode) {
+            panelLocked = false;
+            infoPanel.style.display = 'none';
+            connectionsPanel.style.display = 'none';
+            overlay.setProps({ layers: [scatter] });
+          }
+          clickedOnNode = false;
+        }, 0);
+      });
+
+      // Populate Home Node dropdown
+      homeSelect.style.display = 'block';
+      fetch(`${API_BASE}/asterisk/localnodes`, {
+        headers: { 'Authorization': 'Bearer ' + authToken }
+      })
+      .then(r => r.json())
+      .then(json => {
+        homeConnectedIds = json.localnodes.map(n => +n);
+        json.localnodes.forEach(id => {
+          if (nodeById.has(String(id))) {
+            homeSelect.appendChild(new Option(id, id));
+          }
+        });
+      });
+
+      let homeMarker = null;
+
+      function loadHomeConnections() {
+        if (!homeCoords) return;
+        fetch(`${API_BASE}/asterisk/connections`, {
+          headers: { 'Authorization': 'Bearer ' + authToken }
+        })
+        .then(r => r.json())
+        .then(json => {
+          connectionsPanel.innerHTML = `<h3>Home Connections for Node ${json.home_node}</h3>`;
+          json.connections.forEach(c => {
+            const t = nodeById.get(String(c.node));
+            let desc = c.desc;
+            if (t && !String(c.node).startsWith('3')) {
+              desc = `Call Sign:${t['Call Sign']||''}, Freq:${t.Freq||''}, Tone:${t.Tone||''}, ` +
+                     `Location:${t.Location||''}, Country:${t.Country||''}, ` +
+                     `Site Name:${t['Site Name']||''}, Affiliation:${t.Affiliation||''}`;
+            }
+            const div = document.createElement('div');
+            div.className = 'conn-entry';
+            div.innerHTML =
+              `<div><b>Node:</b> ${c.node} (${c.direction})</div>` +
+              `<div><b>Uptime:</b> ${c.uptime}  <b>IP:</b> ${c.ip}</div>` +
+              `<div style="display:flex;justify-content:space-between;align-items:center;">` +
+                `<span><b>Mode:</b> ${c.mode}</span>` +
+                `<button class="disconnect-btn"` +
+                  ` style="background:red;color:#fff;border:none;` +
+                          `border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;">` +
+                  `Disconnect` +
+                `</button>` +
+              `</div>` +
+              `<div><b>Description:</b> ${desc}</div>`;
+
+            // disconnect + refresh
+            div.querySelector('.disconnect-btn')
+               .addEventListener('click', () => {
+                 performAction(c.node, 'disconnect').then(loadHomeConnections);
+               });
+
+            // hover highlight
+            div.addEventListener('mouseover', () => {
+              if (t && t.Lon != null && t.Lat != null) {
+                const hoverNode = new deck.ScatterplotLayer({
+                  id:'hover-node', data:[t],
+                  getPosition:d=>[d.Lon,d.Lat],
+                  getFillColor:[255,255,0,255],
+                  getRadius:getRadius(t)*1.5
+                });
+                const hoverLine = new deck.LineLayer({
+                  id:'hover-home-link',
+                  data:[{ source:homeCoords, target:[t.Lon,t.Lat] }],
+                  getSourcePosition:d=>d.source,
+                  getTargetPosition:d=>d.target,
+                  getColor:[0,255,0], getWidth:4
+                });
+                overlay.setProps({
+                  layers:[scatter, homeConnectionsLayer, nodeConnectionsLayer, hoverNode, hoverLine]
+                    .filter(Boolean)
+                });
+              }
+            });
+            div.addEventListener('mouseout', () => {
+              overlay.setProps({
+                layers:[scatter, homeConnectionsLayer, nodeConnectionsLayer].filter(Boolean)
+              });
+            });
+
+            connectionsPanel.appendChild(div);
+          });
+          connectionsPanel.style.display = 'block';
+
+          const lines = json.connections
+            .map(c => nodeById.get(String(c.node)))
+            .filter(t => t)
+            .map(t => ({ source: homeCoords, target: [t.Lon, t.Lat] }));
+          homeConnectionsLayer = new deck.LineLayer({
+            id:'home-connections', data:lines,
+            getSourcePosition:d=>d.source,
+            getTargetPosition:d=>d.target,
+            getColor:[0,120,250], getWidth:2
+          });
+          overlay.setProps({ layers:[scatter, homeConnectionsLayer] });
+        });
+      }
+
+      homeSelect.onchange = e => {
+        const id = +e.target.value;
+        homeConnectionsLayer = null;
+        connectionsPanel.style.display = 'none';
+        if (homeMarker) homeMarker.remove();
+        homeCoords = null;
+        overlay.setProps({ layers:[scatter] });
+        if (!id) return;
+
+        fetch(`${API_BASE}/asterisk/home`, {
+          method:'POST',
+          headers:{
+            'Authorization':'Bearer '+authToken,
+            'Content-Type':'application/json'
+          },
+          body:JSON.stringify({ node:id })
+        })
+        .then(r=>r.ok? r.json():Promise.reject('Error setting home node'))
+        .then(()=>{
+          const n = nodeById.get(String(id));
+          homeCoords = [n.Lon, n.Lat];
+          homeMarker = new maplibregl.Marker({ color:'#FF0000' })
+            .setLngLat(homeCoords).addTo(map);
+          homeMarker.getElement().onclick = loadHomeConnections;
+          loadHomeConnections();
+        })
+        .catch(err => alert(err));
+      };
+    }
+  </script>
+</body>
+</html>
+

@@ -1,5 +1,2 @@
-dash
-dash-leaflet
-requests
-pandas
-asterisk-ami
+fastapi[all]>=0.95.0
+uvicorn[standard]>=0.20.0

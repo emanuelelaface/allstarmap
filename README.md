@@ -1,68 +1,60 @@
-# AllStarMap
+# AllStarLink Interactive Map
 
-A Dash-based web application to visualize AllStarLink nodes on a map and manage connections via Asterisk AMI.
-
-![Screenshot](images/screenshot.png)
+An interactive web client built with MapLibre GL JS, deck.gl and a FastAPI backend.  
+Displays AllStarLink nodes, shows detailed info on hover/click, and lets you perform actions like Monitor, Connect, Muted and Disconnect.
 
 ## Features
 
-* Displays all available nodes, with circle sizes proportional to the number of connections
-* Shows details for a single node and its connection links
-* Buttons to monitor, connect, or disconnect links directly from the interface
-* Configuration via an `allstarmap.conf` file
+- **User authentication** via FastAPI `/auth/token`
+- **Interactive map** of nodes with MapLibre GL JS + deck.gl
+- **Hover** to preview node info
+- **Click** to lock info panel and view connections
+- **Disconnect** button in home-node connections with auto-refresh
+- **Home node** selection from dropdown
 
 ## Requirements
 
-* Python 3.7+
-* See `requirements.txt`
+- Python 3.8+
+- FastAPI & Uvicorn
+- Modern web browser (Chrome, Firefox, Edge)
 
 ## Installation
 
-1. Clone this repository:
-
+1. **Clone the repo**  
    ```bash
-   git clone https://github.com/your-username/allstarmap.git
+   git clone https://github.com/yourusername/allstarmap.git
    cd allstarmap
    ```
-2. (Optional) Create and activate a virtual environment:
 
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-3. Install dependencies:
-
+2. **Install Python dependencies**  
    ```bash
    pip install -r requirements.txt
    ```
-4. Copy and edit the example config:
 
-   ```bash
-   cp allstarmap.conf.example allstarmap.conf
-   # Edit allstarmap.conf with your Asterisk username, password, and node number
-   ```
+## Configuration
 
-> **Note:** If you install this application on an AllStarLink node created using the official appliance image from the AllStarLink repository (`https://allstarlink.github.io/install/pi-appliance/pi-detailed/`), you must open port 8501 on the firewall:
->
-> ```bash
-> sudo firewall-cmd --zone=allstarlink --add-port=8501/tcp --permanent
-> sudo firewall-cmd --reload
-> ```
+Open `static/index.html` (or `templates/index.html` if using templating) and set the API base URL:
 
-## Usage
+```js
+const API_BASE = 'http://<YOUR_FASTAPI_HOST>:8501';
+```
+
+Replace `<YOUR_FASTAPI_HOST>` with the hostname or IP where your FastAPI server runs.
+
+## Running
+
+Start the FastAPI server (serves both API and frontend):
 
 ```bash
-python allstarmap.py
+uvicorn allstarapi:app --host 0.0.0.0 --port 8501
 ```
 
-Then open your browser to `http://localhost:8501` to view the map.
+Then browse to:
 
-## Configuration File (`allstarmap.conf`)
-
-```ini
-# allstarmap.conf
-username = YOUR_USER
-password = YOUR_PASS
-node     = YOUR_NODE_NUMBER
+```
+http://localhost:8501/
 ```
 
+## Screenshot
+
+![Screenshot](images/screenshot.png)

@@ -1,0 +1,13 @@
+  {
+    "asterisk": {
+      "username": "<ASTERISK USERNAME>",
+      "password": "<ASTERISK PASSWORD>",
+      "address": "127.0.0.1",
+      "port": 5038
+    },
+    "api": {
+      "users": {
+        "<WEB USERNAME>": "<WEB PASSWORD>"
+      }
+    }
+  }
