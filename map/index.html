@@ -62,7 +62,7 @@
   <script src="https://unpkg.com/@deck.gl/mapbox@8.9.0/dist.min.js"></script>
 
   <script>
-    const API_BASE = 'http://<ALLSTARAPI ADDRESS>:8501';
+    const API_BASE = 'http://192.168.212.89:8501';
     let authToken = '', panelLocked = false, clickedOnNode = false;
     let refreshInterval = null;                // --- timer polling home node
 
@@ -240,7 +240,13 @@
       let homeMarker=null;
       homeSelect.onchange=e=>{
         stopRefresh();               // <<< cambio home = stop polling corrente
-
+        if (!clickedOnNode) {
+          panelLocked = false;
+          infoPanel.style.display = 'none';
+          connectionsPanel.style.display = 'none';
+          overlay.setProps({ layers: [scatter, echoScatter] });
+        }
+        clickedOnNode = false;
         const id=+e.target.value;
         homeConnectionsLayer=null; connectionsPanel.style.display='none';
         if(homeMarker) homeMarker.remove();
@@ -258,13 +264,14 @@
           homeMarker=new maplibregl.Marker({color:'#FF0000'}).setLngLat(homeCoords).addTo(map);
 
           homeMarker.getElement().onclick = ()=>{
+            nodeConnectionsLayer = null;
 	    clickedOnNode = true; 
             stopRefresh();                       // prima azzera, poi ri-avvia
             loadHomeConnections();               // fetch immediato
             refreshInterval = setInterval(loadHomeConnections, 1000);
           };
 
-          loadHomeConnections();   // prima visualizzazione (una tantum)
+        //  loadHomeConnections();   // prima visualizzazione (una tantum)
         })
         .catch(alert);
       };
@@ -285,17 +292,17 @@
             const status=c.status || 'Idle';
             const statusColor = (status === 'Idle') ? '#4caf50' : '#e53935';
             let desc='';
-            if(target){
-              if(isEcho){
-                desc=`Call Sign:${target['Call Sign']||''}, Desc:${target.Desc||''}, Freq:${target.Freq||''}`;
-                lines.push({source:homeCoords,target:[target.Lon,target.Lat]});
-              }else{
-                desc=`Call Sign:${target['Call Sign']||''}, Freq:${target.Freq||''}, Tone:${target.Tone||''}, `+
-                     `Location:${target.Location||''}, Country:${target.Country||''}`;
-                lines.push({source:homeCoords,target:[target.Lon,target.Lat]});
+            if (target && isFinite(target.Lon) && isFinite(target.Lat)) {
+              if (isEcho) {
+                desc = `Call Sign:${target['Call Sign']||''}, Desc:${target.Desc||''}, Freq:${target.Freq||''}`;
+	      } else {
+                desc = `Call Sign:${target['Call Sign']||''}, Freq:${target.Freq||''}, Tone:${target.Tone||''}, ` +
+                `Location:${target.Location||''}, Country:${target.Country||''}`;
               }
-            }else desc=c.desc;
-
+              lines.push({ source: homeCoords, target: [target.Lon, target.Lat] });
+              } else {
+                desc = c.desc || 'Unknown';
+              }
             div.innerHTML=
                  `<div><b>Node:</b> ${c.node}${isEcho?' (EchoLink)':''} (${c.direction})</div>`+
                  `<div><b>Status:</b> <span style="background:${statusColor};color:#fff;padding:0 .3rem;border-radius:3px;">${status}</span></div>`+
@@ -331,8 +338,7 @@
               }
             };
             div.onmouseout=()=>{
-              overlay.setProps({layers:[scatter,echoScatter,homeConnectionsLayer,nodeConnectionsLayer]
-                                 .filter(Boolean)});
+              overlay.setProps({layers:[scatter,echoScatter,homeConnectionsLayer].filter(Boolean)});
             };
 
             connectionsPanel.appendChild(div);
