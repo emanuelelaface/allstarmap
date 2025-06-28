@@ -62,14 +62,16 @@
   <script src="https://unpkg.com/@deck.gl/mapbox@8.9.0/dist.min.js"></script>
 
   <script>
-    const API_BASE = 'http://<ALLSTARAPI ADDRESS>:8501';
+    const API_BASE = 'http://192.168.212.89:8501';
     let authToken = '', panelLocked = false, clickedOnNode = false;
-    let refreshInterval = null; 
+    let refreshInterval = null;                // --- timer polling home node
 
+    // funzione per fermare il polling ovunque serva
     const stopRefresh = () => {
       if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
     };
 
+    // DOM refs
     const loginOverlay = document.getElementById('loginOverlay'),
           loginForm    = document.getElementById('loginForm'),
           loginError   = document.getElementById('loginError'),
@@ -103,11 +105,36 @@
     /* ---------- 2. INIT MAP & LOAD NODES ---------- */
     function initMap(){
       const map = new maplibregl.Map({
-        container:'map',
-        style:'https://demotiles.maplibre.org/style.json',
-        center:[0,0],zoom:1.5
+        container: 'map',
+        style: {
+          version: 8,
+          sources: {
+            'osm-tiles': {
+              type: 'raster',
+              tiles: [
+                'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+              ],
+              tileSize: 256,
+              attribution: '&copy; OpenStreetMap contributors'
+            }
+          },
+          layers: [
+            {
+              id: 'osm-tiles',
+              type: 'raster',
+              source: 'osm-tiles',
+              minzoom: 0,
+              maxzoom: 19
+            }
+          ]
+        },
+        center: [0, 0],
+        zoom: 1.5
       });
-      map.on('load', ()=>{
+
+    map.on('load', ()=>{
         spinner.innerText = '⏳ Loading nodes…';
         Promise.all([
           fetch(`${API_BASE}/nodes`,       {headers:{Authorization:'Bearer '+authToken}}).then(r=>r.json()),
@@ -164,7 +191,7 @@
           }
         },
         onClick:info=>{
-          stopRefresh(); 
+          stopRefresh();              // <<< ferma polling se clicchi un nodo qualsiasi
           if(!info.object)return;
           panelLocked=true; clickedOnNode=true; homeConnectionsLayer=null;
           connectionsPanel.style.display='none';
@@ -173,7 +200,7 @@
           infoPanel.innerHTML=
             Object.entries(node).filter(([k])=>k!=='Lat'&&k!=='Lon')
               .map(([k,v])=>`<div><b>${k}:</b> ${v}</div>`).join('')+
-            ['monitor','connect','muted'].map(a=>
+            ['monitor','connect'].map(a=>
               `<button onclick=\"performAction(${nodeId},'${a}')\">${a[0].toUpperCase()+a.slice(1)}</button>`
             ).join('');
 
@@ -212,7 +239,7 @@
               .map(([k,v])=>`<div><b>${k}:</b> ${v}</div>`).join('');
           }
         }
-        
+        // (EchoLink nodes non cliccabili, quindi nessun onClick)
       });
 
       /* ---- overlay & click-reset ---- */
@@ -220,7 +247,7 @@
       map.addControl(overlay);
       map.on('click',()=>setTimeout(()=>{
         if(!clickedOnNode){
-          stopRefresh(); 
+          stopRefresh();             // <<< clic in mappa “vuota” ferma polling
           panelLocked=false; infoPanel.style.display='none'; connectionsPanel.style.display='none';
           overlay.setProps({layers:[scatter,echoScatter]});
         }
@@ -237,7 +264,7 @@
 
       let homeMarker=null;
       homeSelect.onchange=e=>{
-        stopRefresh(); 
+        stopRefresh();               // <<< cambio home = stop polling corrente
         if (!clickedOnNode) {
           panelLocked = false;
           infoPanel.style.display = 'none';
@@ -264,10 +291,12 @@
           homeMarker.getElement().onclick = ()=>{
             nodeConnectionsLayer = null;
 	    clickedOnNode = true; 
-            stopRefresh();
-            loadHomeConnections();
+            stopRefresh();                       // prima azzera, poi ri-avvia
+            loadHomeConnections();               // fetch immediato
             refreshInterval = setInterval(loadHomeConnections, 1000);
           };
+
+        //  loadHomeConnections();   // prima visualizzazione (una tantum)
         })
         .catch(alert);
       };
