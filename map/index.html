@@ -62,7 +62,7 @@
   <script src="https://unpkg.com/@deck.gl/mapbox@8.9.0/dist.min.js"></script>
 
   <script>
-    const API_BASE = 'http://192.168.212.89:8501';
+    const API_BASE = 'http://<ALLSTARAPI ADDRESS>:8501';
     let authToken = '', panelLocked = false, clickedOnNode = false;
     let refreshInterval = null;                // --- timer polling home node
 
@@ -234,12 +234,32 @@
           if(panelLocked)return;
           infoPanel.style.display=info.object?'block':'none';
           if(info.object){
-            infoPanel.innerHTML=Object.entries(info.object)
+            infoPanel.innerHTML='<div><b>Echolink</b></div>' + 
+	      Object.entries(info.object)
               .filter(([k])=>k!=='Lat'&&k!=='Lon')
               .map(([k,v])=>`<div><b>${k}:</b> ${v}</div>`).join('');
           }
+        },
+        // ------------- NEW CLICK SUPPORT FOR ECHOLINK NODES ------------- //
+        onClick:info=>{
+          stopRefresh();
+          if(!info.object)return;
+          panelLocked=true; clickedOnNode=true; homeConnectionsLayer=null;
+          connectionsPanel.style.display='none';
+          const node=info.object, nodeId=node.Node;
+          const echolinkId='3'+nodeId;          // prepend 3 as required by Asterisk
+          infoPanel.style.display='block';
+          infoPanel.innerHTML='<div><b>Echolink</b></div>' + 
+            Object.entries(node).filter(([k])=>k!=='Lat'&&k!=='Lon')
+              .map(([k,v])=>`<div><b>${k}:</b> ${v}</div>`).join('')+
+            ['monitor','connect'].map(a=>
+              `<button onclick=\"performAction(${echolinkId},'${a}')\">${a[0].toUpperCase()+a.slice(1)}</button>`
+            ).join('');
+
+          // EchoLink nodes don't have inter-node links to fetch, so we simply clear any existing node line layer
+          nodeConnectionsLayer=null;
+          overlay.setProps({layers:[scatter,echoScatter].filter(Boolean)});
         }
-        // (EchoLink nodes non cliccabili, quindi nessun onClick)
       });
 
       /* ---- overlay & click-reset ---- */
@@ -290,7 +310,7 @@
 
           homeMarker.getElement().onclick = ()=>{
             nodeConnectionsLayer = null;
-	    clickedOnNode = true; 
+    	    clickedOnNode = true;
             stopRefresh();                       // prima azzera, poi ri-avvia
             loadHomeConnections();               // fetch immediato
             refreshInterval = setInterval(loadHomeConnections, 1000);
@@ -320,7 +340,7 @@
             if (target && isFinite(target.Lon) && isFinite(target.Lat)) {
               if (isEcho) {
                 desc = `Call Sign:${target['Call Sign']||''}, Desc:${target.Desc||''}, Freq:${target.Freq||''}`;
-	      } else {
+    	  } else {
                 desc = `Call Sign:${target['Call Sign']||''}, Freq:${target.Freq||''}, Tone:${target.Tone||''}, ` +
                 `Location:${target.Location||''}, Country:${target.Country||''}`;
               }
@@ -383,4 +403,3 @@
   </script>
 </body>
 </html>
-
