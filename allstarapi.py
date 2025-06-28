@@ -147,7 +147,7 @@ def parse_local_connections(home_id: int) -> List[Dict]:
                 if st[-1] == 'U':
                     node_stat = 'Idle'
                 if st[-1] == 'K':
-                    node_stat = 'Transmit'
+                    node_stat = 'Transmitting'
     
         if node_id.startswith('3'):
             if raw_echo_cache is None:
@@ -320,5 +320,5 @@ async def node_links(node: int):
 # --------------------------- Entrypoint --------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8501)
+    uvicorn.run(app, host="0.0.0.0", port=8501, log_level="info", access_log=False)
 
