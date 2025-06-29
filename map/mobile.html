@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>AllStarLink &amp; EchoLink – Mobile Map</title>
+  <link href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet"/>
+  <style>
+    :root {
+      --card-bg: rgba(0, 0, 0, 0.75);
+      --panel-bg: #ffffff;
+      --primary: #007bff;
+      --radius: 8px;
+      --transition: 0.25s ease-in-out;
+    }
+
+    html,body,#map,#spinner,#loginOverlay{margin:0;padding:0;width:100%;height:100%;font-family:system-ui,Roboto,"Helvetica Neue",Arial,sans-serif}
+    #map,#spinner{display:none}
+
+    /* Spinner ----------------------------------------------------------- */
+    #spinner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+             background:rgba(255,255,255,.9);padding:1rem 2rem;font-size:1.2rem;
+             border-radius:var(--radius);z-index:1;display:flex;align-items:center;justify-content:center}
+
+    /* Info Panel (node details) ----------------------------------------- */
+    #infoPanel{position:absolute;top:1rem;right:1rem;background:var(--card-bg);
+               color:#fff;padding:.6rem 1rem;border-radius:var(--radius);font-size:.9rem;
+               pointer-events:auto;display:none;z-index:2;max-width:260px;backdrop-filter:blur(6px)}
+    #infoPanel b{display:inline-block;width:90px}
+    #infoPanel button{margin-top:.6rem;width:100%;padding:.5rem;border:none;border-radius:var(--radius);
+                      font-size:.95rem;cursor:pointer;background:var(--primary);color:#fff;transition:background var(--transition)}
+    #infoPanel button:hover{background:#0062d9}
+
+    /* Connections Panel (bottom sheet) ---------------------------------- */
+    #connectionsPanel{position:absolute;bottom:0;left:0;right:0;max-height:35%;
+                      background:var(--panel-bg);overflow-y:auto;padding:.8rem 1rem;box-shadow:0 -2px 8px rgba(0,0,0,.25);
+                      display:none;z-index:2;font-size:.9rem;border-radius:var(--radius) var(--radius) 0 0;transition:transform var(--transition)}
+    #connectionsPanel h3{margin:0 0 .55rem;font-size:1rem;border-bottom:1px solid #ddd;padding-bottom:.4rem}
+    .conn-entry{margin-bottom:.6rem;padding-bottom:.5rem;border-bottom:1px solid #eee;cursor:pointer}
+    .conn-entry:hover{background:rgba(0,120,250,.08)}
+    .disconnect-btn{background:#e53935;color:#fff;border:none;border-radius:var(--radius);padding:.25rem .6rem;font-size:.85rem;cursor:pointer;transition:background var(--transition)}
+    .disconnect-btn:hover{background:#c62828}
+
+    /* Login Overlay ------------------------------------------------------ */
+    #loginOverlay{position:absolute;top:0;left:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:3}
+    #loginForm{background:#fff;padding:2rem;border-radius:var(--radius);box-shadow:0 2px 12px rgba(0,0,0,.5);width:320px;max-width:92vw}
+    #loginForm h2{margin-top:0;font-size:1.4rem}
+    #loginForm label{display:block;margin-top:1.1rem;font-size:.95rem}
+    #loginForm input{width:100%;padding:.55rem;margin-top:.3rem;box-sizing:border-box;border:1px solid #ccc;border-radius:var(--radius)}
+    #loginForm button{margin-top:1.6rem;width:100%;padding:.6rem;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:1rem;transition:background var(--transition)}
+    #loginForm button:hover{background:#0062d9}
+    #loginError{color:red;margin-top:.5rem;font-size:.9rem}
+
+    /* Home node select (floating) --------------------------------------- */
+    #homeNodeSelect{position:absolute;top:1rem;left:1rem;z-index:2;padding:.45rem;.panel-bg;border-radius:var(--radius);font-size:.9rem;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+
+    /* -------------------------- Mobile Tweaks --------------------------- */
+    @media (max-width: 600px){
+      #infoPanel{bottom:0;top:auto;right:0;left:0;max-width:none;border-radius:var(--radius) var(--radius) 0 0;font-size:1rem}
+      #connectionsPanel{max-height:45%;font-size:.95rem}
+      #homeNodeSelect{position:absolute;top:1rem;left:1rem;z-index:2;padding:.45rem;.panel-bg;border-radius:var(--radius);font-size:.9rem;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+      #spinner{font-size:1.35rem}
+      button{font-size:1.05rem}
+    }
+  </style>
+</head>
+<body>
+  <!-- Login ------------------------------------------------------------- -->
+  <div id="loginOverlay" role="dialog" aria-modal="true" aria-label="Login form">
+    <form id="loginForm">
+      <h2>Login</h2>
+      <label>Username<br><input type="text" id="username" autocomplete="username" required></label>
+      <label>Password<br><input type="password" id="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign In</button>
+      <div id="loginError"></div>
+    </form>
+  </div>
+
+  <!-- Main UI ----------------------------------------------------------- -->
+  <div id="spinner" role="status" aria-live="polite">⏳ Loading map…</div>
+  <div id="map" aria-label="Interactive world map"></div>
+  <div id="infoPanel"></div>
+  <select id="homeNodeSelect" style="display:none">
+    <option value="">Home Node…</option>
+  </select>
+  <div id="connectionsPanel"></div>
+
+  <!-- libs -------------------------------------------------------------- -->
+  <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@deck.gl/core@8.9.0/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/layers@8.9.0/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/mapbox@8.9.0/dist.min.js"></script>
+
+  <!-- JS ---------------------------------------------------------------- -->
+  <script>
+    /* -------------------------------------------------------------------
+       CONFIGURATION & STATE
+    ------------------------------------------------------------------- */
+    const API_BASE = "http://192.168.212.89:8501";
+    let authToken = "";
+    let panelLocked = false;
+    let clickedOnNode = false;
+    let refreshInterval = null;
+
+    const stopRefresh = () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+    };
+
+    /* -------------------------------------------------------------------
+       DOM REFS
+    ------------------------------------------------------------------- */
+    const loginOverlay      = document.getElementById("loginOverlay"),
+          loginForm         = document.getElementById("loginForm"),
+          loginError        = document.getElementById("loginError"),
+          spinner           = document.getElementById("spinner"),
+          mapDiv            = document.getElementById("map"),
+          infoPanel         = document.getElementById("infoPanel"),
+          homeSelect        = document.getElementById("homeNodeSelect"),
+          connectionsPanel  = document.getElementById("connectionsPanel");
+
+    /* -------------------------------------------------------------------
+       1. LOGIN
+    ------------------------------------------------------------------- */
+    loginForm.addEventListener("submit", e => {
+      e.preventDefault();
+      loginError.textContent = "";
+      const u = document.getElementById("username").value.trim(),
+            p = document.getElementById("password").value.trim();
+      if (!u || !p) return (loginError.textContent = "Missing credentials");
+
+      fetch(`${API_BASE}/auth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: u, password: p })
+      })
+        .then(r => (r.ok ? r.json() : Promise.reject("Invalid credentials")))
+        .then(j => {
+          authToken = j.access_token;
+          loginOverlay.style.display = "none";
+          mapDiv.style.display       = "block";
+          spinner.style.display      = "flex";
+          initMap();
+        })
+        .catch(err => (loginError.textContent = err));
+    });
+
+    /* -------------------------------------------------------------------
+       2. INIT MAP & LOAD NODES
+    ------------------------------------------------------------------- */
+    function initMap() {
+      const map = new maplibregl.Map({
+        container: "map",
+        style: {
+          version: 8,
+          sources: {
+            "osm-tiles": {
+              type: "raster",
+              tiles: [
+                "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              ],
+              tileSize: 256,
+              attribution: "&copy; OpenStreetMap contributors"
+            }
+          },
+          layers: [{ id: "osm-tiles", type: "raster", source: "osm-tiles", minzoom: 0, maxzoom: 19 }]
+        },
+        center: [0, 0],
+        zoom: 1.5,
+        attributionControl: false
+      });
+
+      // Handle orientation changes / soft keyboard resize
+      window.addEventListener("resize", () => map.resize());
+
+      /* ------------------- Load node data --------------------------- */
+      map.on("load", () => {
+        spinner.innerText = "⏳ Loading nodes…";
+        Promise.all([
+          fetch(`${API_BASE}/nodes`,        { headers: { Authorization: `Bearer ${authToken}` } }).then(r => r.json()),
+          fetch(`${API_BASE}/echolinknodes`, { headers: { Authorization: `Bearer ${authToken}` } }).then(r => r.json())
+        ])
+          .then(([starNodes, echoNodes]) => {
+            spinner.style.display = "none";
+            setupLayers(map, starNodes, echoNodes);
+          })
+          .catch(err => {
+            spinner.innerHTML = `❌ Error: ${err}`;
+            setTimeout(() => (spinner.style.display = "none"), 3000);
+          });
+      });
+    }
+
+    /* -------------------------------------------------------------------
+       3. LAYERS & INTERACTIONS
+    ------------------------------------------------------------------- */
+    function setupLayers(map, starNodes, echoNodes) {
+      /* Keeping the exact logic from the desktop version but with minor
+         accessibility tweaks. */
+
+      const starById = new Map(starNodes.map(d => [String(d.Node), d]));
+      const echoById = new Map(echoNodes.map(d => [String(d.Node), d]));
+      const maxConn = Math.max(...starNodes.map(d => +d.Connections || 0), 1);
+
+      /* Helpers ------------------------------------------------------ */
+      const getColor = d => {
+        const t = Math.min((+d.Connections || 0) / maxConn, 1);
+        if (t < 0.5) {
+          const r = t / 0.5;
+          return [0, Math.round(255 * r), Math.round(255 * (1 - r))];
+        }
+        const r = (t - 0.5) / 0.5;
+        return [Math.round(255 * r), Math.round(255 * (1 - r)), 0];
+      };
+      const getRadius = d => Math.sqrt(+d.Connections + 1) * 6000;
+
+      let homeConnectionsLayer = null,
+          nodeConnectionsLayer = null,
+          homeCoords           = null;
+
+      /* ---------------- Action helper ------------------------------- */
+      function performAction(nodeId, action) {
+        return fetch(`${API_BASE}/asterisk/link/${nodeId}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ action })
+        })
+	  .then(r => {
+            if (!r.ok) throw new Error(`${action} failed`);
+            alert(`"${action}" done`);
+            infoPanel.style.display = 'none';
+            panelLocked = false;
+          })
+          .catch(alert);
+      }
+      window.performAction = performAction; // expose to inline buttons
+
+      /* ---------------- ALLSTAR scatter ----------------------------- */
+      const starScatter = new deck.ScatterplotLayer({
+        id: "star-nodes",
+        data: starNodes,
+        pickable: true,
+        getPosition: d => [d.Lon, d.Lat],
+        getFillColor: d => [...getColor(d), 200],
+        getRadius,
+        parameters: { depthTest: false },
+        onHover: ({ object }) => showNodeInfo(object, false),
+        onClick: ({ object }) => onNodeClick(object, false)
+      });
+
+      /* ---------------- ECHOLINK scatter ---------------------------- */
+      const echoScatter = new deck.ScatterplotLayer({
+        id: "echo-nodes",
+        data: echoNodes,
+        pickable: true,
+        getPosition: d => [d.Lon, d.Lat],
+        getFillColor: [0, 200, 255, 200],
+        getRadius: 5000,
+        parameters: { depthTest: false },
+        onHover: ({ object }) => showNodeInfo(object, true),
+        onClick: ({ object }) => onNodeClick(object, true)
+      });
+
+      /* ---------------- Hover / Click logic ------------------------- */
+      function showNodeInfo(node, isEcho) {
+        if (panelLocked) return;
+        infoPanel.style.display = node ? "block" : "none";
+        if (!node) return;
+
+        infoPanel.innerHTML = `${isEcho ? "<div><b>Echolink</b></div>" : ""}` +
+          Object.entries(node)
+            .filter(([k]) => k !== "Lat" && k !== "Lon")
+            .map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`)
+            .join("") +
+          ["monitor", "connect"].map(a => {
+            const id = isEcho ? "3" + node.Node : node.Node;
+            const label = a.charAt(0).toUpperCase() + a.slice(1);
+            return `<button onclick=\"performAction(${id},'${a}')\">${label}</button>`;
+          }).join("");
+      }
+
+      function onNodeClick(node, isEcho) {
+        if (!node) return;
+        stopRefresh();
+      
+        // 1) Apri subito il pannello con le info
+        showNodeInfo(node, isEcho);
+
+        // 2) Poi blocchi per evitare che l'hover lo chiuda
+        panelLocked = true;
+        clickedOnNode = true;
+        nodeConnectionsLayer = null;
+        connectionsPanel.style.display = 'none';
+
+        if (isEcho) {
+          // EchoLink non ha linee da caricare
+          overlay.setProps({ layers: [scatter, echoScatter] });
+          return;
+        }
+
+        // Carica e disegna i link per i nodi AllStar
+        spinner.style.display = 'flex';
+        spinner.innerText = '⏳ Loading links…';
+        fetch(`${API_BASE}/nodes/${node.Node}/links`, {
+          headers: { Authorization: 'Bearer ' + authToken }
+        })
+          .then(r => r.json())
+          .then(({ links }) => {
+            spinner.style.display = 'none';
+            const lines = links
+              .map(id => starById.get(String(id)))
+              .filter(Boolean)
+              .map(t => ({ source: [node.Lon, node.Lat], target: [t.Lon, t.Lat] }));
+            nodeConnectionsLayer = new deck.LineLayer({
+              id: 'node-connections',
+              data: lines,
+              getSourcePosition: d => d.source,
+              getTargetPosition: d => d.target,
+              getColor: [255, 100, 0],
+              getWidth: 2
+            });
+            overlay.setProps({ layers: [starScatter, echoScatter, nodeConnectionsLayer] });
+          })
+          .catch(err => {
+            console.error(err);
+            spinner.innerText = '❌ Error';
+            setTimeout(() => (spinner.style.display = 'none'), 2000);
+          });
+      }
+      /* ---------------- Map overlay -------------------------------- */
+      const overlay = new deck.MapboxOverlay({ interleaved: true, layers: [starScatter, echoScatter] });
+      map.addControl(overlay);
+
+      /* ---------------- Unselect on map tap ------------------------ */
+      map.on("click", () => {
+        setTimeout(() => {
+          if (!clickedOnNode) {
+            stopRefresh();
+            panelLocked = false;
+            infoPanel.style.display = "none";
+            connectionsPanel.style.display = "none";
+            overlay.setProps({ layers: [starScatter, echoScatter] });
+          }
+          clickedOnNode = false;
+        }, 0);
+      });
+
+      /* ---------------- HOME NODE select --------------------------- */
+      homeSelect.style.display = "block";
+      fetch(`${API_BASE}/asterisk/localnodes`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
+        .then(r => r.json())
+        .then(j => j.localnodes.forEach(id => {
+          if (starById.has(String(id))) homeSelect.appendChild(new Option(id, id));
+        }));
+
+      let homeMarker = null;
+      homeSelect.onchange = e => {
+        stopRefresh();
+        panelLocked = false;
+        infoPanel.style.display = "none";
+        connectionsPanel.style.display = "none";
+        overlay.setProps({ layers: [starScatter, echoScatter] });
+
+        const id = +e.target.value;
+        homeConnectionsLayer = null;
+        nodeConnectionsLayer = null;
+        if (homeMarker) homeMarker.remove();
+        homeCoords = null;
+        if (!id) return;
+
+        fetch(`${API_BASE}/asterisk/home`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ node: id })
+        })
+          .then(r => (r.ok ? r.json() : Promise.reject("Error setting home node")))
+          .then(() => {
+            const n = starById.get(String(id));
+            homeCoords = [n.Lon, n.Lat];
+            homeMarker = new maplibregl.Marker({ color: "#FF0000" }).setLngLat(homeCoords).addTo(map);
+
+            homeMarker.getElement().addEventListener("click", () => {
+              nodeConnectionsLayer = null;
+              clickedOnNode = true;
+              stopRefresh();
+              loadHomeConnections(); // immediate fetch
+              refreshInterval = setInterval(loadHomeConnections, 1500);
+            });
+          })
+          .catch(alert);
+      };
+
+      /* ---------------- HOME CONNECTIONS --------------------------- */
+      function loadHomeConnections() {
+        if (!homeCoords) return;
+        fetch(`${API_BASE}/asterisk/connections`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        })
+          .then(r => r.json())
+          .then(json => {
+            connectionsPanel.innerHTML = `<h3>Home Connections for Node ${json.home_node}</h3>`;
+            const lines = [];
+            json.connections.forEach(c => {
+              const str = String(c.node);
+              const isEcho = str.startsWith("3");
+              const target = isEcho ? echoById.get(str.slice(1)) : starById.get(str);
+
+              // Build connection entry -------------------------
+              const entry = document.createElement("div");
+              entry.className = "conn-entry";
+
+              const statusColor = c.status === "Idle" ? "#4caf50" : "#e53935";
+              let desc = "";
+              if (target) {
+                desc = isEcho
+                  ? `Call Sign:${target["Call Sign"] || ""}, Desc:${target.Desc || ""}, Freq:${target.Freq || ""}`
+                  : `Call Sign:${target["Call Sign"] || ""}, Freq:${target.Freq || ""}, Tone:${target.Tone || ""}, Location:${target.Location || ""}, Country:${target.Country || ""}`;
+                lines.push({ source: homeCoords, target: [target.Lon, target.Lat] });
+              } else desc = c.desc || "Unknown";
+
+              entry.innerHTML =
+                `<div><b>Node:</b> ${c.node}${isEcho ? " (EchoLink)" : ""} (${c.direction})</div>` +
+                `<div><b>Status:</b> <span style=\"background:${statusColor};color:#fff;padding:0 .3rem;border-radius:3px;\">${c.status}</span></div>` +
+                `<div><b>Uptime:</b> ${c.uptime} &nbsp; <b>IP:</b> ${c.ip}</div>` +
+                `<div style=\"display:flex;justify-content:space-between;align-items:center;\">` +
+                  `<span><b>Mode:</b> ${c.mode}</span>` +
+                  `<button class=\"disconnect-btn\">Disconnect</button>` +
+                `</div>` +
+                `<div><b>Description:</b> ${desc}</div>`;
+
+              // disconnect
+              entry.querySelector(".disconnect-btn").onclick = () => {
+                performAction(c.node, "disconnect").then(loadHomeConnections);
+              };
+
+              // Hover highlight on desktop ------------------------------------------------
+              entry.onmouseover = () => {
+                if (!target) return;
+                const hoverNode = new deck.ScatterplotLayer({
+                  id: "hover-node",
+                  data: [target],
+                  getPosition: d => [d.Lon, d.Lat],
+                  getFillColor: [255, 255, 0, 255],
+                  getRadius: (isEcho ? 5000 : getRadius(target)) * 1.4,
+                  parameters: { depthTest: false }
+                });
+                const hoverLine = new deck.LineLayer({
+                  id: "hover-line",
+                  data: [{ source: homeCoords, target: [target.Lon, target.Lat] }],
+                  getSourcePosition: d => d.source,
+                  getTargetPosition: d => d.target,
+                  getColor: [0, 255, 0],
+                  getWidth: 3
+                });
+                overlay.setProps({ layers: [starScatter, echoScatter, homeConnectionsLayer, nodeConnectionsLayer, hoverNode, hoverLine].filter(Boolean) });
+              };
+              entry.onmouseout = () => overlay.setProps({ layers: [starScatter, echoScatter, homeConnectionsLayer].filter(Boolean) });
+
+              connectionsPanel.appendChild(entry);
+            });
+
+            /* Draw connection lines ---------------------------------- */
+            homeConnectionsLayer = new deck.LineLayer({
+              id: "home-connections",
+              data: lines,
+              getSourcePosition: d => d.source,
+              getTargetPosition: d => d.target,
+              getColor: [0, 120, 250],
+              getWidth: 2
+            });
+            overlay.setProps({ layers: [starScatter, echoScatter, homeConnectionsLayer, nodeConnectionsLayer].filter(Boolean) });
+            connectionsPanel.style.display = "block";
+          });
+      }
+    }
+  </script>
+</body>
+</html>
